@@ -94,23 +94,33 @@ namespace XamlToPngRenderer
             // Prepare for rendering (Window vs Control)
             FrameworkElement renderTarget = PrepareRenderTarget(element, renderWidth, renderHeight);
 
-            // Layout
+            // Layout - First pass
             var size = new Size(renderWidth, renderHeight);
             Log("Calling Measure & Arrange...");
             renderTarget.Measure(size);
             renderTarget.Arrange(new Rect(size));
+            renderTarget.UpdateLayout();
             
-            // Image Resolution
-            if (!string.IsNullOrEmpty(imageBase))
+            // ISSUE 2 FIX: STEP 1 - Expand all Expanders FIRST (before images)
+            Log("Pass 1: Expanding all Expanders...");
+            ExpandAllExpanders(renderTarget);
+            
+            // STEP 2: Force layout regeneration after expansion
+            renderTarget.UpdateLayout();
+            ApplyTemplatesRecursively(renderTarget);
+            renderTarget.UpdateLayout();
+            renderTarget.Measure(size);
+            renderTarget.Arrange(new Rect(size));
+            renderTarget.UpdateLayout();
+            
+            // STEP 3: NOW resolve images (visual tree is complete)
+            string imageBasePath = imageBase;
+            if (string.IsNullOrEmpty(imageBasePath))
             {
-                ResolveImages(renderTarget, imageBase);
+                 imageBasePath = Path.GetDirectoryName(Path.GetFullPath(xamlPath));
             }
-            else
-            {
-                 // Default to XAML directory if not provided
-                 string dir = Path.GetDirectoryName(Path.GetFullPath(xamlPath));
-                 ResolveImages(renderTarget, dir);
-            }
+            Log("Pass 2: Resolving images...");
+            ResolveImages(renderTarget, imageBasePath);
             
             // Allow state modification (e.g. tabs)
             preRenderAction?.Invoke(renderTarget);
@@ -209,16 +219,17 @@ namespace XamlToPngRenderer
                      Background = window.Background ?? Brushes.White,
                      Child = content
                  };
-                 // If Window had resources directly, we might lose them unless we copy them to container or sub-elements
-                 // But we added merged dicts to 'element' (the window).
-                 // The content is now child of border. Resources allow inheritance.
-                 // However, the Window properties itself are lost.
-                 // We should move Resources to the Border if possible
                  
+                 // If Window had resources directly, copy them to container
                  if (window.Resources.Count > 0 || window.Resources.MergedDictionaries.Count > 0)
                  {
                      container.Resources = window.Resources;
                  }
+                 
+                 // CRITICAL FIX: Propagate DataContext to the new container!
+                 // When content is moved from Window to Border, it loses DataContext inheritance
+                 container.DataContext = window.DataContext;
+                 Log($"Propagated DataContext to Border: {container.DataContext != null}");
                  
                  return container;
              }
@@ -264,7 +275,22 @@ namespace XamlToPngRenderer
             }
         }
 
-        
+        // ISSUE 2 FIX: Separate method to expand all Expanders before image resolution
+        private void ExpandAllExpanders(DependencyObject root)
+        {
+            if (root is Expander expander && !expander.IsExpanded)
+            {
+                Log($"Expanding Expander: {expander.Name ?? "(unnamed)"}");
+                expander.IsExpanded = true;
+            }
+            
+            int count = VisualTreeHelper.GetChildrenCount(root);
+            for (int i = 0; i < count; i++)
+            {
+                ExpandAllExpanders(VisualTreeHelper.GetChild(root, i));
+            }
+        }
+
         private void ResolveImages(FrameworkElement root, string basePath)
         {
              // Simple recursive finder for Images
@@ -317,15 +343,8 @@ namespace XamlToPngRenderer
                 }
             }
             
-            // Helper to expand Expanders
-            if (obj is Expander expander)
-            {
-                if (!expander.IsExpanded)
-                {
-                    Log("Forcing Expander to open...");
-                    expander.IsExpanded = true;
-                }
-            }
+            // NOTE: Expander expansion is now done separately in ExpandAllExpanders
+            // before this method is called, so visual tree is already complete
 
             int count = VisualTreeHelper.GetChildrenCount(obj);
             for(int i=0; i<count; i++)
@@ -334,72 +353,103 @@ namespace XamlToPngRenderer
             }
         }
 
+        // ISSUE 5 FIX: Enhanced binding resolution with multiple fallback methods
         private void ResolveBindingImageSource(Image img, string basePath)
         {
              try
              {
-                 var binding = System.Windows.Data.BindingOperations.GetBindingExpression(img, Image.SourceProperty);
-                 if (binding != null)
+                 var bindingExpr = System.Windows.Data.BindingOperations.GetBindingExpression(img, Image.SourceProperty);
+                 if (bindingExpr == null)
                  {
-                     Log($"Image has binding: {binding.ParentBinding.Path?.Path}");
-                     var dataItem = binding.DataItem;
-                     
-                     if (dataItem == null)
+                     Log("  No binding expression on Image.Source");
+                     return;
+                 }
+                 
+                 var binding = bindingExpr.ParentBinding;
+                 var path = binding?.Path?.Path;
+                 Log($"  Image has binding path: '{path}'");
+                 
+                 var dataItem = bindingExpr.DataItem;
+                 if (dataItem == null)
+                 {
+                     Log("  WARNING: Binding DataItem is null - DataContext not set or binding failed");
+                     return;
+                 }
+                 
+                 Log($"  DataItem type: {dataItem.GetType().Name}");
+                 
+                 // Try multiple ways to get the value
+                 object value = null;
+                 
+                 // Method 1: Indexer (for BindableWrapper/Dictionary)
+                 var indexer = dataItem.GetType().GetProperty("Item", new[] { typeof(string) });
+                 if (indexer != null)
+                 {
+                     value = indexer.GetValue(dataItem, new object[] { path });
+                     if (value != null) Log($"  Retrieved via indexer: {value}");
+                 }
+                 
+                 // Method 2: Direct property
+                 if (value == null)
+                 {
+                     var prop = dataItem.GetType().GetProperty(path);
+                     if (prop != null)
                      {
-                         Log("Warning: Binding DataItem is null - DataContext may not be set");
-                         return;
+                         value = prop.GetValue(dataItem);
+                         if (value != null) Log($"  Retrieved via property: {value}");
                      }
-
-                     var path = binding.ParentBinding.Path?.Path;
-                     Log($"Attempting to resolve binding path '{path}' from {dataItem.GetType().Name}");
-                     
-                     if (!string.IsNullOrEmpty(path))
+                 }
+                 
+                 // Method 3: TryGetMember for DynamicObject
+                 if (value == null && dataItem is System.Dynamic.DynamicObject dynObj)
+                 {
+                     var binder = new SimpleGetMemberBinder(path);
+                     dynObj.TryGetMember(binder, out value);
+                     if (value != null) Log($"  Retrieved via DynamicObject: {value}");
+                 }
+                 
+                 // Now resolve the value
+                 if (value is string imagePath && !string.IsNullOrEmpty(imagePath))
+                 {
+                     var absPath = Path.IsPathRooted(imagePath) 
+                         ? imagePath 
+                         : Path.GetFullPath(Path.Combine(basePath, imagePath));
+                         
+                     if (File.Exists(absPath))
                      {
-                         object value = null;
-                         
-                         // Try indexer (for BindableWrapper or Dictionaries)
-                         var indexer = dataItem.GetType().GetProperty("Item", new Type[] { typeof(string) });
-                         if (indexer != null)
-                         {
-                             value = indexer.GetValue(dataItem, new object[] { path });
-                         }
-                         else
-                         {
-                             // Try simple reflection
-                             var p = dataItem.GetType().GetProperty(path);
-                             if (p != null) value = p.GetValue(dataItem);
-                         }
-                         
-                         if (value != null)
-                         {
-                             Log($"Manual binding resolution: {path} = {value}");
-                             if (value is string checkPath)
-                             {
-                                 // Resolve path
-                                 var absPath = Path.Combine(basePath, checkPath);
-                                 if (File.Exists(absPath))
-                                 {
-                                     Log($"Resolving bound image path: {absPath}");
-                                     var newBi = new BitmapImage();
-                                     newBi.BeginInit();
-                                     newBi.UriSource = new Uri(absPath);
-                                     newBi.CacheOption = BitmapCacheOption.OnLoad;
-                                     newBi.EndInit();
-                                     img.Source = newBi;
-                                 }
-                             }
-                         }
+                         Log($"  Resolving bound image: {imagePath} -> {absPath}");
+                         var bi = new BitmapImage();
+                         bi.BeginInit();
+                         bi.UriSource = new Uri(absPath);
+                         bi.CacheOption = BitmapCacheOption.OnLoad;
+                         bi.EndInit();
+                         img.Source = bi;
                      }
+                     else
+                     {
+                         Log($"  WARNING: Bound image file not found: {absPath}");
+                     }
+                 }
+                 else if (value is BitmapImage)
+                 {
+                     Log($"  Image already has BitmapImage value");
                  }
                  else
                  {
-                     Log("Image has no binding expression");
+                     Log($"  WARNING: Could not resolve image value (type: {value?.GetType().Name ?? "null"})");
                  }
              }
              catch (Exception ex)
              {
-                 Log($"Error resolving binding manually: {ex.Message}");
+                 Log($"  ERROR in ResolveBindingImageSource: {ex.Message}");
              }
+        }
+        
+        // Helper class for DynamicObject.TryGetMember
+        private class SimpleGetMemberBinder : System.Dynamic.GetMemberBinder
+        {
+            public SimpleGetMemberBinder(string name) : base(name, false) { }
+            public override System.Dynamic.DynamicMetaObject FallbackGetMember(System.Dynamic.DynamicMetaObject target, System.Dynamic.DynamicMetaObject errorSuggestion) => null;
         }
     }
 }

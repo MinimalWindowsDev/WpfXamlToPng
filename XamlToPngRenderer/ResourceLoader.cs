@@ -66,12 +66,25 @@ namespace XamlToPngRenderer
                     {
                         var resourceDictElement = outputResources.Elements().First(); // Should be ResourceDictionary
                         
-                        // We need to clean this XAML too (remove x:Class from App, etc)
-                        // But we already have the element.
-                        
-                        // Let's assume we can just pass the inner XAML to XamlReader
+                        // We need to clean this XAML too (remove CLR namespaces, etc)
                         string resXaml = resourceDictElement.ToString();
-                        return (ResourceDictionary)XamlReader.Parse(resXaml);
+                        
+                        // ISSUE 1 FIX: Preprocess the resource XAML before parsing
+                        resXaml = _preprocessor.ProcessXaml(resXaml);
+                        Log($"Preprocessed resource XAML ({resXaml.Length} chars)");
+                        
+                        try
+                        {
+                            var rd = (ResourceDictionary)XamlReader.Parse(resXaml);
+                            Log($"Successfully loaded {rd.Count} resources");
+                            return rd;
+                        }
+                        catch (Exception parseEx)
+                        {
+                            Log($"ERROR loading resources: {parseEx.Message}");
+                            // Return empty dict rather than null to allow continued operation
+                            return new ResourceDictionary();
+                        }
                     }
                 }
                 else if (doc.Root.Name.LocalName == "ResourceDictionary")
