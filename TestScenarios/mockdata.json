@@ -1,0 +1,20 @@
+{
+  "IsConnected": true,
+  "LogText": "System initialized...\nLoading modules...\nModule 1 ready.\nModule 2 ready.",
+  "ConnectionStatusText": "Connected",
+  "IpAddress": "192.168.1.100",
+  "Port": "502",
+  "Modules": [
+    {
+      "Type": "Digital Input Module",
+      "IOPoints": [
+        {"Label": "DI_01", "Address": "0x0001", "IO": "Input", "Value": "1"},
+        {"Label": "DI_02", "Address": "0x0002", "IO": "Input", "Value": "0"}
+      ]
+    },
+    {
+       "Type": "Analog Output Module",
+       "IOPoints": []
+    }
+  ]
+}

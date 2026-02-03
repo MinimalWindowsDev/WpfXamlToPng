@@ -1,0 +1,57 @@
+<Window x:Class="ComplexWpfApp.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:viewmodels="clr-namespace:ComplexWpfApp.ViewModels"
+        mc:Ignorable="d"
+        Title="Safety PLC Emulator" Height="450" Width="800"
+        Loaded="Window_Loaded">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header using App.xaml resource -->
+        <TextBlock Text="Safety PLC Control Panel" Style="{StaticResource HeaderTextStyle}"/>
+
+        <!-- Status Panel with Data Binding -->
+        <Border Grid.Row="1" Background="#F0F0F0" Padding="10" Margin="0,0,0,10" BorderBrush="#CCC" BorderThickness="1">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Status: " FontWeight="Bold"/>
+                <TextBlock Text="{Binding ConnectionStatusText}" Margin="0,0,20,0"/>
+                
+                <TextBlock Text="IP: " FontWeight="Bold"/>
+                <TextBlock Text="{Binding IpAddress}" Margin="0,0,20,0"/>
+
+                <CheckBox IsChecked="{Binding IsConnected}" Content="Online" IsEnabled="False"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Main Content with Tabs -->
+        <TabControl Grid.Row="2">
+            <TabItem Header="Modules">
+                <DataGrid ItemsSource="{Binding Modules}" AutoGenerateColumns="False" Margin="10">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="*"/>
+                        <DataGridTextColumn Header="Count" Binding="{Binding IOPoints.Count}" Width="100"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+            
+            <TabItem Header="Log">
+                <ScrollViewer>
+                    <TextBlock Text="{Binding LogText}" FontFamily="Consolas"/>
+                </ScrollViewer>
+            </TabItem>
+            
+            <TabItem Header="Settings">
+                <StackPanel Margin="10">
+                    <Button Content="Update Firmware" Style="{StaticResource ModernButtonStyle}" Click="Button_Click"/>
+                </StackPanel>
+            </TabItem>
+        </TabControl>
+    </Grid>
+</Window>

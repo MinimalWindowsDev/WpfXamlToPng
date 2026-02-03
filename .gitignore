@@ -1,6 +1,17 @@
+# Build outputs
 bin/
 obj/
+
+# Visual Studio
+.vs/
 *.user
 *.suo
-.vs/
+
+# Generated outputs
 output/
+execution_logs/
+
+# Log files
+*.log
+debug_log*.txt
+build_log*.txt

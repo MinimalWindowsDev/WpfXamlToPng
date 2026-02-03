@@ -1,10 +1,6 @@
 using System;
 using System.IO;
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Xml.Linq;
 
 namespace XamlToPngRenderer
 {
@@ -18,6 +14,13 @@ namespace XamlToPngRenderer
             // Parse arguments
             string inputPath = null;
             string outputPath = null;
+            string batchDir = null;
+            string resourcePath = null;
+
+
+            string contextPath = null;
+            string scenarioPath = null;
+            bool generateTabs = false;
             int? width = null;
             int? height = null;
             int dpi = 96;
@@ -32,15 +35,35 @@ namespace XamlToPngRenderer
                         break;
                     case "-w":
                     case "--width":
-                        width = int.Parse(args[++i]);
+                        if (i + 1 < args.Length) width = int.Parse(args[++i]);
                         break;
                     case "-h":
                     case "--height":
-                        height = int.Parse(args[++i]);
+                        if (i + 1 < args.Length) height = int.Parse(args[++i]);
                         break;
                     case "-d":
                     case "--dpi":
-                        dpi = int.Parse(args[++i]);
+                        if (i + 1 < args.Length) dpi = int.Parse(args[++i]);
+                        break;
+                    case "-r":
+                    case "--resources":
+                        if (i + 1 < args.Length) resourcePath = args[++i];
+                        break;
+                    case "-c":
+                    case "--context":
+                        if (i + 1 < args.Length) contextPath = args[++i];
+                        break;
+                    case "-s":
+                    case "--scenario":
+                        if (i + 1 < args.Length) scenarioPath = args[++i];
+                        break;
+                    case "-t":
+                    case "--tabs":
+                        generateTabs = true;
+                        break;
+                    case "-b":
+                    case "--batch":
+                        if (i + 1 < args.Length) batchDir = args[++i];
                         break;
                     default:
                         if (inputPath == null)
@@ -51,19 +74,64 @@ namespace XamlToPngRenderer
                 }
             }
 
-            if (inputPath == null || outputPath == null)
+            if ((inputPath == null || outputPath == null) && scenarioPath == null && batchDir == null)
             {
-                Console.WriteLine("Usage: XamlToPngRenderer.exe [options] <input.xaml> <output.png>");
-                Console.WriteLine();
-                Console.WriteLine("Options:");
-                Console.WriteLine("  -v, --verbose     Enable verbose debug logging");
-                Console.WriteLine("  -w, --width N     Render width in pixels (default: from XAML)");
-                Console.WriteLine("  -h, --height N    Render height in pixels (default: from XAML)");
-                Console.WriteLine("  -d, --dpi N       DPI for rendering (default: 96)");
-                Console.WriteLine();
-                Console.WriteLine("Example:");
-                Console.WriteLine("  XamlToPngRenderer.exe -v MainWindow.xaml output.png");
+                PrintUsage();
                 return 1;
+            }
+            
+            // Scenario mode handles everything if present
+            if (scenarioPath != null)
+            {
+                 var runner = new ScenarioRunner(_verbose);
+                 runner.RunScenarios(scenarioPath);
+                 return 0;
+            }
+            
+            // Batch mode handles directory iteration
+            if (batchDir != null)
+            {
+                if (outputPath == null) 
+                {
+                    Console.WriteLine("Error: Output directory must be specified for batch mode.");
+                    return 1;
+                }
+                
+                if (!Directory.Exists(batchDir))
+                {
+                    Console.WriteLine($"Error: Batch directory not found: {batchDir}");
+                    return 1;
+                }
+                
+                string[] files = Directory.GetFiles(batchDir, "*.xaml");
+                Console.WriteLine($"Batch processing {files.Length} files from {batchDir}...");
+                
+                // Initialize shared components
+                var renderer = new Renderer(_verbose);
+                var resLoader = new ResourceLoader(_verbose);
+                var ctxLoader = new MockDataContext(_verbose);
+                
+                ResourceDictionary resources = null;
+                if (resourcePath != null) resources = resLoader.LoadResources(resourcePath);
+                
+                object dataContext = null;
+                if (contextPath != null) dataContext = ctxLoader.LoadContext(contextPath);
+                
+                foreach (var file in files)
+                {
+                    string fileName = Path.GetFileNameWithoutExtension(file);
+                    string outFile = Path.Combine(outputPath, fileName + ".png");
+                    try
+                    {
+                        Console.WriteLine($"Processing: {fileName}");
+                        renderer.Render(file, outFile, width, height, dpi, resources, dataContext);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Failed to process {fileName}: {ex.Message}");
+                    }
+                }
+                return 0;
             }
 
             if (!File.Exists(inputPath))
@@ -74,7 +142,41 @@ namespace XamlToPngRenderer
 
             try
             {
-                RenderXamlToPng(inputPath, outputPath, width, height, dpi);
+                // Initialize components
+                var renderer = new Renderer(_verbose);
+                var resLoader = new ResourceLoader(_verbose);
+                var ctxLoader = new MockDataContext(_verbose);
+
+                // Load dependencies
+                ResourceDictionary resources = null;
+                if (resourcePath != null)
+                {
+                    resources = resLoader.LoadResources(resourcePath);
+                    if (resources == null) Console.WriteLine("Warning: Failed to load resources.");
+                }
+
+                object dataContext = null;
+                if (contextPath != null)
+                {
+                    dataContext = ctxLoader.LoadContext(contextPath);
+                    if (dataContext == null) Console.WriteLine("Warning: Failed to load context.");
+                }
+
+                // Capture element for tab processing
+                FrameworkElement loadedElement = null;
+                Action<FrameworkElement> captureAction = (e) => loadedElement = e;
+
+                // Render
+                renderer.Render(inputPath, outputPath, width, height, dpi, resources, dataContext, captureAction);
+                
+                // Process Tabs if requested
+                if (generateTabs && loadedElement != null)
+                {
+                     Console.WriteLine("Generating tab screenshots...");
+                     var tabRenderer = new TabRenderer(renderer, _verbose);
+                     tabRenderer.RenderTabs(loadedElement, outputPath, width ?? (int)loadedElement.Width, height ?? (int)loadedElement.Height, dpi);
+                }
+                
                 Console.WriteLine($"Success: {outputPath}");
                 return 0;
             }
@@ -84,216 +186,35 @@ namespace XamlToPngRenderer
                 if (_verbose)
                 {
                     Console.WriteLine($"Stack trace:\n{ex.StackTrace}");
+                    if (ex.InnerException != null)
+                    {
+                        Console.WriteLine($"Inner Exception: {ex.InnerException.Message}");
+                        Console.WriteLine(ex.InnerException.StackTrace);
+                    }
                 }
                 return 1;
             }
         }
 
-        static void Log(string message)
+        static void PrintUsage()
         {
-            if (_verbose)
-                Console.WriteLine($"[DEBUG] {message}");
-        }
-
-        static void RenderXamlToPng(string xamlPath, string pngPath, int? width, int? height, int dpi)
-        {
-            Log($"Loading XAML from: {xamlPath}");
-
-            // Load and preprocess XAML to remove x:Class attribute
-            var xamlContent = File.ReadAllText(xamlPath);
-            var doc = XDocument.Parse(xamlContent);
-
-            Log($"Root element: {doc.Root.Name.LocalName}");
-
-            // Remove x:Class attribute (prevents "Specified class name doesn't match" error)
-            XNamespace xNs = "http://schemas.microsoft.com/winfx/2006/xaml";
-            var classAttr = doc.Root.Attribute(xNs + "Class");
-            if (classAttr != null)
-            {
-                Log($"Removing x:Class attribute: {classAttr.Value}");
-                classAttr.Remove();
-            }
-
-            // Also remove any event handler attributes (they reference code-behind methods)
-            RemoveEventHandlers(doc.Root);
-
-            // Parse the cleaned XAML
-            Log("Parsing cleaned XAML...");
-            FrameworkElement element;
-            using (var reader = doc.CreateReader())
-            {
-                element = System.Windows.Markup.XamlReader.Load(reader) as FrameworkElement;
-            }
-
-            if (element == null)
-            {
-                throw new InvalidOperationException("XAML root must be a FrameworkElement");
-            }
-
-            Log($"Parsed element type: {element.GetType().FullName}");
-            Log($"Element.Width: {element.Width} (NaN means Auto)");
-            Log($"Element.Height: {element.Height} (NaN means Auto)");
-
-            // Determine size
-            double renderWidth = width ?? element.Width;
-            double renderHeight = height ?? element.Height;
-
-            if (double.IsNaN(renderWidth) || double.IsNaN(renderHeight))
-            {
-                throw new InvalidOperationException(
-                    "Window/Control has no explicit size. Provide -w and -h arguments.");
-            }
-
-            Log($"Render size: {renderWidth} x {renderHeight}");
-
-            // Handle Window specially - extract content and ensure background
-            FrameworkElement renderTarget = element;
-            Brush backgroundBrush = Brushes.White;
-
-            if (element is Window window)
-            {
-                Log("Element is a Window - extracting content for rendering");
-
-                // Get background from Window if set
-                if (window.Background != null)
-                {
-                    backgroundBrush = window.Background;
-                    Log($"Window.Background: {window.Background}");
-                }
-                else
-                {
-                    Log("Window.Background is null - will use white background");
-                }
-
-                // Get content reference and detach from window FIRST
-                var content = window.Content as UIElement;
-                window.Content = null;
-                Log($"Detached content: {content?.GetType().Name ?? "null"}");
-
-                // Create a container that mimics the window's content area
-                var container = new Border
-                {
-                    Width = renderWidth,
-                    Height = renderHeight,
-                    Background = backgroundBrush,
-                    Child = content
-                };
-
-                renderTarget = container;
-                Log($"Created Border container with Background: {backgroundBrush}");
-            }
-            else if (element is Control control)
-            {
-                Log($"Element is a Control - Background: {control.Background}");
-                if (control.Background == null)
-                {
-                    control.Background = Brushes.White;
-                    Log("Set default white background on Control");
-                }
-            }
-
-            var size = new Size(renderWidth, renderHeight);
-
-            // Measure and Arrange (required for off-screen rendering)
-            Log("Calling Measure...");
-            renderTarget.Measure(size);
-            Log($"DesiredSize after Measure: {renderTarget.DesiredSize}");
-
-            Log("Calling Arrange...");
-            renderTarget.Arrange(new Rect(size));
-            Log($"ActualWidth x ActualHeight after Arrange: {renderTarget.ActualWidth} x {renderTarget.ActualHeight}");
-
-            Log("Calling UpdateLayout...");
-            renderTarget.UpdateLayout();
-
-            // Force visual tree creation
-            Log("Calling ApplyTemplate on visual tree...");
-            ApplyTemplatesRecursively(renderTarget);
-
-            // Render to bitmap
-            double scale = dpi / 96.0;
-            int pixelWidth = (int)(renderWidth * scale);
-            int pixelHeight = (int)(renderHeight * scale);
-
-            Log($"Bitmap size: {pixelWidth} x {pixelHeight} pixels at {dpi} DPI (scale: {scale})");
-
-            var bitmap = new RenderTargetBitmap(pixelWidth, pixelHeight, dpi, dpi, PixelFormats.Pbgra32);
-
-            Log("Rendering to bitmap...");
-            bitmap.Render(renderTarget);
-
-            // Check if bitmap is empty
-            if (_verbose)
-            {
-                var pixels = new byte[pixelWidth * pixelHeight * 4];
-                bitmap.CopyPixels(pixels, pixelWidth * 4, 0);
-                int nonZeroPixels = 0;
-                for (int i = 0; i < pixels.Length; i++)
-                {
-                    if (pixels[i] != 0) nonZeroPixels++;
-                }
-                Log($"Non-zero bytes in bitmap: {nonZeroPixels} / {pixels.Length}");
-                if (nonZeroPixels == 0)
-                {
-                    Log("WARNING: Bitmap is completely empty/transparent!");
-                }
-            }
-
-            // Encode and save as PNG
-            var encoder = new PngBitmapEncoder();
-            encoder.Frames.Add(BitmapFrame.Create(bitmap));
-
-            string outputDir = Path.GetDirectoryName(pngPath);
-            if (!string.IsNullOrEmpty(outputDir) && !Directory.Exists(outputDir))
-            {
-                Log($"Creating output directory: {outputDir}");
-                Directory.CreateDirectory(outputDir);
-            }
-
-            Log($"Saving PNG to: {pngPath}");
-            using (var fileStream = File.Create(pngPath))
-            {
-                encoder.Save(fileStream);
-            }
-
-            Log("Done.");
-        }
-
-        static void ApplyTemplatesRecursively(DependencyObject obj)
-        {
-            if (obj is FrameworkElement fe)
-            {
-                fe.ApplyTemplate();
-            }
-
-            int childCount = VisualTreeHelper.GetChildrenCount(obj);
-            for (int i = 0; i < childCount; i++)
-            {
-                var child = VisualTreeHelper.GetChild(obj, i);
-                ApplyTemplatesRecursively(child);
-            }
-        }
-
-        static void RemoveEventHandlers(XElement element)
-        {
-            // Common event handler attributes to remove
-            string[] eventAttributes = { "Click", "Loaded", "Closing", "Closed", "MouseDown",
-                "MouseUp", "KeyDown", "KeyUp", "TextChanged", "SelectionChanged" };
-
-            foreach (var attr in eventAttributes)
-            {
-                var removed = element.Attribute(attr);
-                if (removed != null)
-                {
-                    if (_verbose) Console.WriteLine($"[DEBUG] Removing event handler: {attr}");
-                    removed.Remove();
-                }
-            }
-
-            foreach (var child in element.Elements())
-            {
-                RemoveEventHandlers(child);
-            }
+            Console.WriteLine("Usage: XamlToPngRenderer.exe [options] <input.xaml> <output.png>");
+            Console.WriteLine();
+            Console.WriteLine("Options:");
+            Console.WriteLine("  -v, --verbose     Enable verbose debug logging");
+            Console.WriteLine("  -w, --width N     Render width in pixels (default: from XAML)");
+            Console.WriteLine("  -h, --height N    Render height in pixels (default: from XAML)");
+            Console.WriteLine("  -d, --dpi N       DPI for rendering (default: 96)");
+            Console.WriteLine("  -r, --resources   Path to App.xaml or ResourceDictionary");
+            Console.WriteLine("  -c, --context     Path to JSON file for DataContext");
+            Console.WriteLine("  -s, --scenario    Path to scenarios.yaml file");
+            Console.WriteLine("  -t, --tabs        Generate screenshots for each TabItem");
+            Console.WriteLine("  -b, --batch       Directory containing XAML files to process");
+            Console.WriteLine();
+            Console.WriteLine("Example:");
+            Console.WriteLine("  XamlToPngRenderer.exe -r App.xaml -c data.json MainWindow.xaml output.png");
+            Console.WriteLine("  XamlToPngRenderer.exe -s scenarios.yaml");
+            Console.WriteLine("  XamlToPngRenderer.exe -b Views/ -r App.xaml output_dir/");
         }
     }
 }

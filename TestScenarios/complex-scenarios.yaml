@@ -1,0 +1,26 @@
+name: SafetyPLC-Documentation
+base_resources: App.xaml
+base_context: mockdata.json
+output_dir: output/doc/images
+input: ../ComplexWpfApp/MainWindow.xaml
+
+scenarios:
+  - name: disconnected
+    context_overrides:
+      IsConnected: false
+      ConnectionStatusText: "Disconnected"
+    output: MainWindow_Disconnected.png
+
+  - name: connected
+    context_overrides:
+      IsConnected: true
+      ConnectionStatusText: "Connected to 192.168.1.100:502"
+    output: MainWindow_Connected.png
+
+  - name: modules-tab
+    tab_index: 0
+    output: MainWindow_ModulesTab.png
+
+  - name: log-tab
+    tab_index: 1
+    output: MainWindow_LogTab.png
