@@ -14,19 +14,23 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- Header using App.xaml resource -->
-        <TextBlock Text="Safety PLC Control Panel" Style="{StaticResource HeaderTextStyle}"/>
+        <!-- Header with logo -->
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+             <Image Source="Images/logo.png" Height="50" Margin="10"/>
+             <TextBlock Text="Safety PLC Control Panel" Style="{StaticResource HeaderTextStyle}" VerticalAlignment="Center"/>
+        </StackPanel>
 
         <!-- Status Panel with Data Binding -->
         <Border Grid.Row="1" Background="#F0F0F0" Padding="10" Margin="0,0,0,10" BorderBrush="#CCC" BorderThickness="1">
             <StackPanel Orientation="Horizontal">
-                <TextBlock Text="Status: " FontWeight="Bold"/>
-                <TextBlock Text="{Binding ConnectionStatusText}" Margin="0,0,20,0"/>
+                <Image Source="{Binding StatusImage}" Width="24" Height="24" Margin="0,0,10,0"/>
+                <TextBlock Text="Status: " FontWeight="Bold" VerticalAlignment="Center"/>
+                <TextBlock Text="{Binding ConnectionStatusText}" Margin="0,0,20,0" VerticalAlignment="Center"/>
                 
-                <TextBlock Text="IP: " FontWeight="Bold"/>
-                <TextBlock Text="{Binding IpAddress}" Margin="0,0,20,0"/>
+                <TextBlock Text="IP: " FontWeight="Bold" VerticalAlignment="Center"/>
+                <TextBlock Text="{Binding IpAddress}" Margin="0,0,20,0" VerticalAlignment="Center"/>
 
-                <CheckBox IsChecked="{Binding IsConnected}" Content="Online" IsEnabled="False"/>
+                <CheckBox IsChecked="{Binding IsConnected}" Content="Online" IsEnabled="False" VerticalAlignment="Center"/>
             </StackPanel>
         </Border>
 
@@ -35,6 +39,13 @@
             <TabItem Header="Modules">
                 <DataGrid ItemsSource="{Binding Modules}" AutoGenerateColumns="False" Margin="10">
                     <DataGrid.Columns>
+                        <DataGridTemplateColumn Header="Image" Width="60">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Image Source="{Binding Image}" Width="40" Height="40"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
                         <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="*"/>
                         <DataGridTextColumn Header="Count" Binding="{Binding IOPoints.Count}" Width="100"/>
                     </DataGrid.Columns>

@@ -16,6 +16,7 @@ namespace XamlToPngRenderer
             string outputPath = null;
             string batchDir = null;
             string resourcePath = null;
+            string imageBase = null;
 
 
             string contextPath = null;
@@ -64,6 +65,10 @@ namespace XamlToPngRenderer
                     case "-b":
                     case "--batch":
                         if (i + 1 < args.Length) batchDir = args[++i];
+                        break;
+                    case "-i":
+                    case "--image-base":
+                        if (i + 1 < args.Length) imageBase = args[++i];
                         break;
                     default:
                         if (inputPath == null)
@@ -124,7 +129,7 @@ namespace XamlToPngRenderer
                     try
                     {
                         Console.WriteLine($"Processing: {fileName}");
-                        renderer.Render(file, outFile, width, height, dpi, resources, dataContext);
+                        renderer.Render(file, outFile, width, height, dpi, resources, dataContext, null, imageBase);
                     }
                     catch (Exception ex)
                     {
@@ -167,7 +172,7 @@ namespace XamlToPngRenderer
                 Action<FrameworkElement> captureAction = (e) => loadedElement = e;
 
                 // Render
-                renderer.Render(inputPath, outputPath, width, height, dpi, resources, dataContext, captureAction);
+                renderer.Render(inputPath, outputPath, width, height, dpi, resources, dataContext, captureAction, imageBase);
                 
                 // Process Tabs if requested
                 if (generateTabs && loadedElement != null)
@@ -210,10 +215,12 @@ namespace XamlToPngRenderer
             Console.WriteLine("  -s, --scenario    Path to scenarios.yaml file");
             Console.WriteLine("  -t, --tabs        Generate screenshots for each TabItem");
             Console.WriteLine("  -b, --batch       Directory containing XAML files to process");
+            Console.WriteLine("  -i, --image-base  Base directory for resolving relative image paths");
             Console.WriteLine();
             Console.WriteLine("Example:");
             Console.WriteLine("  XamlToPngRenderer.exe -r App.xaml -c data.json MainWindow.xaml output.png");
             Console.WriteLine("  XamlToPngRenderer.exe -s scenarios.yaml");
+            Console.WriteLine("  XamlToPngRenderer.exe -r App.xaml -i Images/ MainWindow.xaml output.png");
             Console.WriteLine("  XamlToPngRenderer.exe -b Views/ -r App.xaml output_dir/");
         }
     }

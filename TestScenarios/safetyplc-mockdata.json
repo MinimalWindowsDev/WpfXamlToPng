@@ -1,0 +1,102 @@
+{
+    "IsConnected": true,
+    "ConnectionStatusText": "Connected to 192.168.1.100:502",
+    "IpAddress": "192.168.1.100",
+    "Port": "502",
+    "LogText": "System initialized...\n[INFO] Modbus server started\n[INFO] Listening on port 502",
+    "Modules": [
+        {
+            "Type": "Digital Input Module DI-16",
+            "Image": "Images/module_input.png",
+            "IOPoints": [
+                {
+                    "Label": "DI_01",
+                    "Address": "0x0001",
+                    "IO": "Input",
+                    "Value": "1",
+                    "IsEditable": false
+                },
+                {
+                    "Label": "DI_02",
+                    "Address": "0x0002",
+                    "IO": "Input",
+                    "Value": "0",
+                    "IsEditable": false
+                },
+                {
+                    "Label": "DI_03",
+                    "Address": "0x0003",
+                    "IO": "Input",
+                    "Value": "1",
+                    "IsEditable": false
+                },
+                {
+                    "Label": "DI_04",
+                    "Address": "0x0004",
+                    "IO": "Input",
+                    "Value": "0",
+                    "IsEditable": false
+                }
+            ]
+        },
+        {
+            "Type": "Digital Output Module DO-16",
+            "Image": "Images/module_output.png",
+            "IOPoints": [
+                {
+                    "Label": "DO_01",
+                    "Address": "0x0010",
+                    "IO": "Output",
+                    "Value": "1",
+                    "IsEditable": true
+                },
+                {
+                    "Label": "DO_02",
+                    "Address": "0x0011",
+                    "IO": "Output",
+                    "Value": "0",
+                    "IsEditable": true
+                }
+            ]
+        }
+    ],
+    "DigitalIOPoints": [
+        {
+            "Device": "Module 1",
+            "Label": "DI_01",
+            "Address": "0x0001",
+            "IO": "Input",
+            "Value": "1"
+        },
+        {
+            "Device": "Module 1",
+            "Label": "DI_02",
+            "Address": "0x0002",
+            "IO": "Input",
+            "Value": "0"
+        },
+        {
+            "Device": "Module 2",
+            "Label": "DO_01",
+            "Address": "0x0010",
+            "IO": "Output",
+            "Value": "1"
+        }
+    ],
+    "AnalogIOPoints": [
+        {
+            "Device": "Analog Module",
+            "Label": "AI_01",
+            "Address": "0x1000",
+            "IO": "Input",
+            "Value": "2.45"
+        },
+        {
+            "Device": "Analog Module",
+            "Label": "AO_01",
+            "Address": "0x2000",
+            "IO": "Output",
+            "Value": "4.20"
+        }
+    ]
+}

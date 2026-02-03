@@ -41,14 +41,14 @@ namespace XamlToPngRenderer
         {
             if (obj is Dictionary<string, object> dict)
             {
-                var expando = new ExpandoObject() as IDictionary<string, object>;
+                var wrapper = new BindableWrapper();
                 foreach (var kvp in dict)
                 {
-                    expando[kvp.Key] = ToExpando(kvp.Value);
+                    wrapper.SetMember(kvp.Key, ToExpando(kvp.Value));
                 }
-                return expando;
+                return wrapper;
             }
-            else if (obj is System.Collections.ArrayList list) // JavaScriptSerializer deserializes arrays to ArrayList
+            else if (obj is System.Collections.ArrayList list)
             {
                 var resultList = new List<object>();
                 foreach (var item in list)
@@ -67,6 +67,42 @@ namespace XamlToPngRenderer
                 return resultList;
             }
             return obj;
+        }
+    }
+
+    public class BindableWrapper : DynamicObject, INotifyPropertyChanged
+    {
+        private readonly Dictionary<string, object> _values = new Dictionary<string, object>();
+
+        public void SetMember(string name, object value)
+        {
+            _values[name] = value;
+            OnPropertyChanged(name);
+        }
+
+        public override bool TryGetMember(GetMemberBinder binder, out object result)
+        {
+            return _values.TryGetValue(binder.Name, out result);
+        }
+
+        public override bool TrySetMember(SetMemberBinder binder, object value)
+        {
+            SetMember(binder.Name, value);
+            return true;
+        }
+
+        public event PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void OnPropertyChanged(string propertyName)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+
+        // Check for indexer access (dictionary style)
+        public object this[string key]
+        {
+            get => _values.ContainsKey(key) ? _values[key] : null;
+            set => SetMember(key, value);
         }
     }
 }

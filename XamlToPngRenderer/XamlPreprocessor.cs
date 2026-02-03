@@ -42,13 +42,43 @@ namespace XamlToPngRenderer
             
             // 4. Remove DataType attributes that reference types
             RemoveDataTypeAttributes(doc.Root);
+            
+            // 5. Disable Virtualization (Fix for DataGrid/ListView rendering)
+            DisableVirtualization(doc.Root);
 
-            // 5. Convert StaticResource to DynamicResource (to allow late binding of external resources)
+            // 6. Convert StaticResource to DynamicResource (to allow late binding of external resources)
             // This is done on the string representation because replacing markup extensions in XDocument is hard
             string xaml = doc.ToString();
             xaml = ConvertStaticToDynamicResource(xaml);
             
             return xaml;
+        }
+
+        public string ResolveImagePaths(string xaml, string basePath)
+        {
+            // Find Source="..." attributes that look like relative paths
+            // Convert them to absolute paths
+            // e.g., Source="Images/logo.png" -> Source="C:/full/path/Images/logo.png"
+            
+            var regex = new System.Text.RegularExpressions.Regex(@"Source=""([^""]+\.(png|jpg|jpeg|gif|bmp))""", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            return regex.Replace(xaml, match =>
+            {
+                var relativePath = match.Groups[1].Value;
+                if (!System.IO.Path.IsPathRooted(relativePath) && !relativePath.StartsWith("pack://"))
+                {
+                    try
+                    {
+                        var absolutePath = System.IO.Path.GetFullPath(System.IO.Path.Combine(basePath, relativePath));
+                        if (System.IO.File.Exists(absolutePath))
+                        {
+                            Log($"Resolving image path: {relativePath} -> {absolutePath}");
+                            return $"Source=\"{absolutePath.Replace("\\", "/")}\"";
+                        }
+                    }
+                    catch { /* Ignore invalid paths */ }
+                }
+                return match.Value;
+            });
         }
 
         private string ConvertStaticToDynamicResource(string xaml)
@@ -116,6 +146,23 @@ namespace XamlToPngRenderer
              {
                  RemoveDataTypeAttributes(child);
              }
+        }
+
+        private void DisableVirtualization(XElement element)
+        {
+            // DataGrid, ListView, ListBox use virtualization by default, which can cause empty rendering
+            string[] virtualizingControls = { "DataGrid", "ListView", "ListBox" };
+            
+            if (virtualizingControls.Contains(element.Name.LocalName))
+            {
+                Log($"Disabling virtualization on {element.Name.LocalName}");
+                element.SetAttributeValue("VirtualizingPanel.IsVirtualizing", "False");
+            }
+            
+            foreach (var child in element.Elements())
+            {
+                DisableVirtualization(child);
+            }
         }
     }
 }
